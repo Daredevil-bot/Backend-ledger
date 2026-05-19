@@ -7,6 +7,9 @@ const transactionRoutes=require('./routes/transaction.routes');
 
 app.use(express.json());
 app.use(cookieParser());
+app.get('/',(req,res)=>{
+    res.send('Welcome to the Ledger API');
+})
 app.use('/api/auth',authRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/transactions', transactionRoutes);
