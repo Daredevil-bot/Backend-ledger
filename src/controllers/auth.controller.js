@@ -1,6 +1,7 @@
 const User = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 const emailService = require('../services/email.service');
+const Blacklist= require('../models/blacklist.model');
 
 exports.register = async (req, res) => {
     try {
@@ -49,4 +50,14 @@ exports.login=async(req,res)=>{
         console.error(err);
         res.status(500).json({error:'Server error'});
     }
+}
+
+exports.logout = async (req, res) => {
+    const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+    if (!token) {
+        return res.status(400).json({ error: 'No token provided' });
+    }
+    await Blacklist.create({ token });
+    res.clearCookie('token');
+    res.status(200).json({ message: 'Logged out successfully' });
 }

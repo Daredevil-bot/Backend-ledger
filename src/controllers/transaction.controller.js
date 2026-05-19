@@ -45,6 +45,8 @@ exports.createTransaction = async (req, res) => {
 
     const fromAccountDoc = await Account.findById(fromAccount);
     const toAccountDoc = await Account.findById(toAccount);
+    console.log("From account document:", fromAccountDoc);
+    console.log("To account document:", toAccountDoc);
 
     if (!fromAccountDoc || !toAccountDoc) {
         return res.status(404).json({ message: 'One or both accounts not found' });
@@ -55,21 +57,25 @@ exports.createTransaction = async (req, res) => {
     }
 
     const balance = await fromAccountDoc.getBalance();
+    console.log(`Balance for account ${fromAccount}: ${balance}`);
     if (balance < amount) {
         return res.status(400).json({ message: 'Insufficient balance' });
     }
 
+    let transaction
+try{
     const session = await mongoose.startSession();
     session.startTransaction();
 
 
-    const transaction = new Transaction({
+    
+    transaction = await Transaction.create([{
         fromAccount,
         toAccount,
         amount,
         idempotencyKey,
         status: 'pending'
-    });
+    }], { session });
 
     const debitLedgerEntry = await LedgerEntry.create([{
         account: fromAccount,
@@ -87,14 +93,28 @@ exports.createTransaction = async (req, res) => {
 
     }], { session });
 
-    transaction.status = 'completed';
-    await transaction.save({ session });
+   await Transaction.findByIdAndUpdate(transaction._id, { status: 'completed' }, { session });
 
     await session.commitTransaction();
     session.endSession();
+    }
+    catch(error){
+        await session.abortTransaction();
+        session.endSession();
+        console.error('Transaction failed:', error);
+        return res.status(500).json({ message: 'Transaction is pending, please try again later' });
+    }
 
-    await emailService.sendTransactionEmail(fromAccountDoc.user.email, fromAccountDoc.user.name, amount, toAccountDoc._id);
-    await emailService.sendTransactionEmail(toAccountDoc.user.email, toAccountDoc.user.name, amount, toAccountDoc._id);
+  
+
+    const userEmail=await fromAccountDoc.populate('user').then(doc => doc.user.email);
+    const userName=await fromAccountDoc.populate('user').then(doc => doc.user.name);
+
+    const receiverEmail=await toAccountDoc.populate('user').then(doc => doc.user.email);
+    const receiverName=await toAccountDoc.populate('user').then(doc => doc.user.name);
+
+    await emailService.sendTransactionEmail(userEmail, userName, amount, toAccountDoc._id);
+    await emailService.sendTransactionEmail(receiverEmail, receiverName, amount, toAccountDoc._id);
 
     return res.status(201).json(transaction);
 }
@@ -126,9 +146,12 @@ exports.createInitialFundsTransaction = async (req, res) => {
     }
 
     const fromAccount = await Account.findOne({ user: req.user._id});
+
+   
     if (!fromAccount) {
         return res.status(404).json({ message: 'System account not found for user' });
     }
+   
 
     const toAccountDoc = await Account.findById(toAccount);
     console.log("To account document:", toAccountDoc);
@@ -140,17 +163,18 @@ exports.createInitialFundsTransaction = async (req, res) => {
     if (toAccountDoc.status !== 'active') {
         return res.status(400).json({ message: 'Account is not active' });
     }
-
-    const session = await mongoose.startSession();
+    let transaction
+try{
+const session = await mongoose.startSession();
     session.startTransaction();
 
-    const transaction = new Transaction({
+    transaction = await Transaction.create([{
         fromAccount: fromAccount._id,
         toAccount: toAccountDoc._id,
         amount,
         idempotencyKey,
         status: 'pending'
-    });
+    }], { session });
 
     const debitLedgerEntry = await LedgerEntry.create([{
         account: fromAccount._id,
@@ -167,13 +191,23 @@ exports.createInitialFundsTransaction = async (req, res) => {
 
     }], { session });
 
-    transaction.status = 'completed';
-    await transaction.save({ session });
+    await Transaction.findByIdAndUpdate(transaction._id, { status: 'completed' }, { session });
 
     await session.commitTransaction();
     session.endSession();
+}
+catch(error){
+    await session.abortTransaction();
+    session.endSession();
+    console.error('Transaction failed:', error);
+    return res.status(500).json({ message: 'Transaction is pending, please try again later' });
+}
 
-    await emailService.sendTransactionEmail(toAccountDoc.user.email, toAccountDoc.user.name, amount, toAccountDoc._id);
+     const userEmail=await toAccountDoc.populate('user').then(doc => doc.user.email);
+     const userName=await toAccountDoc.populate('user').then(doc => doc.user.name);
+    
+
+    await emailService.sendTransactionEmail(userEmail, userName, amount, toAccountDoc._id);
 
     return res.status(201).json(transaction);
 }
