@@ -1,0 +1,39 @@
+services:
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # no ports exposed — only reachable by backend inside Docker network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: naman161101/ledger-backend:latest
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - FRONTEND_URL=http://localhost:3001
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    image: naman161101/ledger-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+
+volumes:
+  redis_data:

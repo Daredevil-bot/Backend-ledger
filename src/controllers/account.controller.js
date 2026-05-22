@@ -1,32 +1,41 @@
 const Account = require('../models/account.model');
+const { invalidateCache, cacheKey } = require('../middleware/cache.middleware');
 
 exports.createAccount = async (req, res) => {
-   const userId = req.user._id;
-
-   const account= new Account({
-    user: userId,
-   });
-    await account.save();
-
-   res.status(201).json({account});
-}
+    try {
+        const userId = req.user._id;
+        const account = new Account({ user: userId });
+        await account.save();
+        await invalidateCache(cacheKey('account:details', userId));
+        res.status(201).json({ account });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to create account' });
+    }
+};
 
 exports.getAccountDetails = async (req, res) => {
-    const userId = req.user._id;
-    const account = await Account.findOne({ user: userId });
-    if (!account) {
-        return res.status(404).json({ message: 'Account not found' });
+    try {
+        const userId = req.user._id;
+        const accounts = await Account.find({ user: userId });
+        if (!accounts.length) {
+            return res.status(404).json({ message: 'No accounts found' });
+        }
+        res.json({ accounts });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to fetch accounts' });
     }
-    const balance = await account.getBalance();
-    res.json({ account, balance });
-}  
+};
 
 exports.getAccountBalance = async (req, res) => {
-    const accountId = req.params.id;
-    const account = await Account.findOne({ _id: accountId, user: req.user._id });
-    if (!account) {
-        return res.status(404).json({ message: 'Account not found' });
+    try {
+        const accountId = req.params.id;
+        const account = await Account.findOne({ _id: accountId, user: req.user._id });
+        if (!account) {
+            return res.status(404).json({ message: 'Account not found' });
+        }
+        const balance = await account.getBalance();
+        res.json({ balance });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to fetch balance' });
     }
-    const balance = await account.getBalance();
-    res.json({ balance });
 };

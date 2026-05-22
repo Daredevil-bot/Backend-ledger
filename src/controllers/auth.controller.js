@@ -2,9 +2,14 @@ const User = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 const emailService = require('../services/email.service');
 const Blacklist= require('../models/blacklist.model');
+const { registerSchema, loginSchema } = require('../validationSchema');
 
 exports.register = async (req, res) => {
     try {
+        const result = registerSchema.safeParse(req.body);
+        if (!result.success) {
+            return res.status(400).json({ error: result.error.format() });
+        }
         const { email, password, name } = req.body;
         const existingUser = await User.findOne({ email });
         if (existingUser) {
@@ -22,7 +27,9 @@ exports.register = async (req, res) => {
         });
         res.status(201).json({ user: { id: user._id, email: user.email, name: user.name }, token });
 
-        await emailService.sendRegistrationEmail(user.email, user.name);
+        emailService.sendRegistrationEmail(user.email, user.name).catch((err) =>
+            console.error('Registration email failed:', err.message)
+        );
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
@@ -31,11 +38,18 @@ exports.register = async (req, res) => {
 
 exports.login=async(req,res)=>{
     try{
+        const result = loginSchema.safeParse(req.body);
+        if (!result.success) {
+            return res.status(400).json({ error: result.error.format() });
+        }
         const {email,password}= req.body;
         if(!email || !password){
             return res.status(400).json({error:'Email and password are required'});
         }
-        const user=await User.findOne({email}).select('+password');
+        const user=await User.findOne({email}).select('+password +systemUser');
+        if(!user){
+            return res.status(401).json({error:'Invalid credentials'});
+        }
         const isValidPassword=await user.comparePassword(password);
         if(!isValidPassword){
             return res.status(401).json({error:'Invalid credentials'});
@@ -45,12 +59,23 @@ exports.login=async(req,res)=>{
             httpOnly:true,
             sameSite:'strict',
         });
-        res.json({user:{id:user._id,email:user.email,name:user.name},token});
+        res.json({user:{id:user._id,email:user.email,name:user.name,isSystemUser:user.systemUser??false},token});
     }catch(err){
         console.error(err);
         res.status(500).json({error:'Server error'});
     }
 }
+
+exports.me = async (req, res) => {
+    res.json({
+        user: {
+            id: req.user._id,
+            email: req.user.email,
+            name: req.user.name,
+            isSystemUser: req.user.systemUser ?? false,
+        }
+    });
+};
 
 exports.logout = async (req, res) => {
     const token = req.cookies.token || req.headers.authorization?.split(' ')[1];

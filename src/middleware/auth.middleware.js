@@ -5,7 +5,6 @@ const blacklist = require('../models/blacklist.model');
 exports.authMiddleware = async (req, res, next) => {
     try {
         const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
-        console.log('Token from cookie:', req.cookies.token);
         if (!token) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
@@ -14,14 +13,13 @@ exports.authMiddleware = async (req, res, next) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.id);
+        const user = await User.findById(decoded.id).select('+systemUser');
         if (!user) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         req.user = user;
         next();
     } catch (err) {
-        console.error(err);
         res.status(401).json({ error: 'Unauthorized' });
     }
 };
@@ -29,14 +27,13 @@ exports.authMiddleware = async (req, res, next) => {
 exports.systemAuthMiddleware = async (req, res, next) => {
     try {
         const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
-        console.log("System auth middleware token:", token);
         if (!token) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-            const blacklistEntry = await blacklist.findOne({ token });
-            if (blacklistEntry) {
-                return res.status(401).json({ error: 'Unauthorized' });
-            }
+        const blacklistEntry = await blacklist.findOne({ token });
+        if (blacklistEntry) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const user = await User.findById(decoded.id).select('+systemUser');
         if (!user || !user.systemUser) {
@@ -45,7 +42,6 @@ exports.systemAuthMiddleware = async (req, res, next) => {
         req.user = user;
         next();
     } catch (err) {
-        console.error(err);
         res.status(401).json({ error: 'Unauthorized' });
     }
 };
